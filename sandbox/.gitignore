@@ -1,0 +1,7 @@
+*.rds
+*.pdf
+profiling.html
+profiling_files/
+tabular-model-comparison-DIC.tex
+*.png
+*.tex

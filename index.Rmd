@@ -1,0 +1,37 @@
+[![GitLab pipeline status](https://gitlab.com/matthieu-bruneaux/isotracer/badges/master/pipeline.svg)](https://gitlab.com/matthieu-bruneaux/isotracer/commits/master)
+[![Coverage report](https://gitlab.com/matthieu-bruneaux/isotracer/badges/master/coverage.svg)](https://matthieu-bruneaux.gitlab.io/isotracer/coverage/coverage.html)
+[![R_CMD_CHECK](https://matthieu-bruneaux.gitlab.io/isotracer/r-cmd-check-badge.svg)](https://matthieu-bruneaux.gitlab.io/isotracer/R_CMD_CHECK.txt)
+[![Lifecycle Status](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://www.tidyverse.org/lifecycle/)
+
+# isotracer: An R package to model tracer flows in networks
+
+## Quick install
+
+Installing from the GitLab repository should be as easy as typing:
+
+```
+# Run inside an R session
+install.packages("devtools")
+library(devtools)
+install_github("stan-dev/rstantools", quiet = TRUE)
+install_gitlab("matthieu-bruneaux/isotracer", quiet = TRUE)
+```
+
+It's a good idea to have a look at the
+[tutorials](articles/tutorial-000-index.html) to get an idea of how things
+work!
+
+*(The steps above will install the latest stable release. To install the latest development release, check [this link](https://matthieu-bruneaux.gitlab.io/isotracer/develop).)*
+
+## Documentation
+
+You can explore the **Tutorials**, the **Datasets documentation** on this
+website (generated with `pkgdown`).
+
+For advanced users, you can explore the **For Developers** documents and the
+**Reference**.
+
+## Contact
+
+- [Matthieu Bruneaux](mailto:matthieu.bruneaux@gmail.com)
+- [Andrés López-Sepulcre](mailto:lopezsepulcre@gmail.com)

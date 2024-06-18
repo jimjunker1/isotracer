@@ -1,0 +1,158 @@
+---
+title: "Comparing models with LOO cross-validation"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{Comparing models with LOO cross-validation}
+output:
+  rmarkdown::html_vignette
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(fig.align = "center",
+                      fig.path = "figures/z-fig-115-")
+options(scipen = 6, width = 85)
+library(isotracer)
+set.seed(4)
+n_cores <- min(2, parallel::detectCores())
+n_chains <- max(n_cores, 4)
+library(tidyverse)
+library(here)
+
+run_mcmc <- function(...) {
+  isotracer:::run_mcmc(..., cores = n_cores, chains = n_chains,
+                       seed = 44)
+}
+
+set_priors <- function(...) {
+  isotracer:::set_priors(..., quiet = TRUE)
+}
+```
+
+## Overview
+
+Cross-validation is a technique to estimate the predictive accuracy of a fitted model. It is based on partitioning the observed dataset into a training set (used for model fitting) and a testing set (used to estimate the prediction accuracy of the model fitted on the training set). This is usually repeated several times using different training and testing sets and results are then combined to give a more reliable estimate of the model predictive accuracy.
+
+Leave-one-out (LOO) is a cross-validation method where each training set is built by removing one data point at a time from the original dataset, with this data point being the testing set. This approach can take a lot of time when fitting a model is computationally costly: for an original dataset with $n$ data points, it would require refitting the model $n$ times. However, under some conditions, it is possible to obtain a reliable estimate of the LOO cross-validation score based solely on the posteriors from the model fitted with all the data points.
+
+This approach uses **Pareto smoothed importance-sampling leave-one-out cross-validation** (PSIS-LOO) and is implemented in the [`loo` package](https://mc-stan.org/loo/). If you are interested in more background information, please check out the original articles (as well as the [documentation](https://mc-stan.org/loo/articles/index.html) from the `loo` package):
+
+- Vehtari, Aki, Andrew Gelman, and Jonah Gabry. ‘Practical Bayesian Model Evaluation Using Leave-One-out Cross-Validation and WAIC’. Statistics and Computing 27, no. 5 (September 2017): 1413–32. https://doi.org/10.48550/arXiv.1507.04544
+
+- Vehtari, Aki, Daniel Simpson, Andrew Gelman, Yuling Yao, and Jonah Gabry. ‘Pareto Smoothed Importance Sampling’. arXiv, 4 August 2022. https://doi.org/10.48550/arXiv.1507.02646
+
+## Why using LOO cross-validation on a fitted model?
+
+Cross-validation gives a measure of predictive accuracy of a fitted model: how good would the model be at predicting new data points coming from the same generative process as the observed dataset.
+
+It can be used for model comparison when we are interested in comparing the predictive accuracy of several models. For example, we might have two models differing in the distribution family used for observed proportions, or we might have two models differing by the presence/absence of a hypothetical trophic link in their networks.
+
+Importantly, because it is based on predictive accuracy, cross-validation should not be used as a tool for causal inference. As such, it is probably sensible to use it to choose a distribution family for observed proportions. It can also be used to have an idea if adding a scientifically plausible trophic link improves (or not) the predictive accuracy of a model. Note however that arguably a better way to test for the existence of a plausible trophic link might be to simply fit the model incorporating the hypothetical link and to examine if the estimated flux for this link has a posterior that is, in practice, far enough from zero to be relevant for the research question at hand. For more information, have a look at [`loo`'s FAQ](https://mc-stan.org/loo/articles/online-only/faq.html), in particular at [how to use cross-validation for model selection](https://mc-stan.org/loo/articles/online-only/faq.html#modelselection).
+
+Some other tools for model comparison are based on information criteria rather than predictive accuracy, such as WAIC or DIC. Note, however, that the DIC approximation makes some normality assumptions (Spiegelhalter 2002^[Spiegelhalter, David J., Nicola G. Best, Bradley P. Carlin, and Angelika van der Linde. ‘Bayesian Measures of Model Complexity and Fit’. Journal of the Royal Statistical Society: Series B (Statistical Methodology) 64, no. 4 (October 2002): 583–639. https://doi.org/10.1111/1467-9868.00353.
+]) that the posterior obtained with isotracer models might not fulfill.
+
+```{r include = FALSE}
+# On 2023-02-06, on
+# https://en.wikipedia.org/wiki/Deviance_information_criterion :
+#
+# "DIC is an asymptotic approximation as the sample size becomes large, like
+# AIC. It is only valid when the posterior distribution is approximately
+# multivariate normal."
+#
+# However, I tried to read Spiegelhalter 2002, and there are many mentions of
+# assumption of normality, but I am not sure to understand which is the most
+# important: is it the posterior for log-lik which should be normal, or the
+# posterior of the parameters which should be multivariate normal? I should
+# probably try to read Spiegelhalter in more detail and try to understand the
+# derivations in it.
+#
+# Also, the introduction of Vehtari, Gelman, and Gabry 2016 writes that DIC "is
+# known to have some problems, which arise in part from not being fully
+# Bayesian in that it is based on a point estimate (van der Linde, 2005,
+# Plummer, 2008). For example, DIC can produce negative estimates of the
+# effective number of parameters in a model and it is not defined for singular
+# models.  WAIC is fully Bayesian in that it uses the entire posterior
+# distribution, and it is asymptotically equal to Bayesian
+# cross-validation. Unlike DIC, WAIC is invariant to parametrization and also
+# works for singular models."
+#
+# For more about the comparison between CV and DIC, see also the Comment by
+# Vehtari in Spielgelhalter 2002 paper.
+```
+
+## Calculating PSIS-LOO in a simple case
+
+Simple LOO calculation based on the `loo` packge (`rstan` depends on the `loo` package, and `isotracer` depends on `rstan` so you have all the required packages already installed if you have installed `isotracer`).
+
+PSIS-LOO is nice because it is efficient (no model refit needed).
+
+Give a simple example that works nicely.
+
+Explain that sometimes the calculation fails, but at least there are diagnostics to warn us when the approximation is not reliable
+
+Give another example where k values are too high.
+
+What to do when diagnostics are bad? There is a moment-matching method, but it is not implemented for isotracer models at this stage. A better option, but which will require some model reruns, is k-fold CV.
+
+
+```{r }
+m <- new_networkModel() %>%
+  set_topo("NH4, NO3 -> epi, FBOM", "epi -> petro, pseph", "FBOM -> tricor",
+           "petro, tricor -> arg")
+m <- m %>% set_steady(c("NH4", "NO3"))
+library(tidyverse)
+inits <- lalaja %>% filter(time.days == 0)
+m <- m %>% set_init(inits, comp = "compartment", size = "mgN.per.m2", prop = "prop15N",
+                    group_by = c("transect"))
+obs <- lalaja %>% filter(time.days > 0)
+m <- m %>% set_obs(obs, time = "time.days")
+m <- m %>% set_split(c("epi", "FBOM"))
+pulses <- tribble(
+  ~ stream,    ~ transect, ~ comp, ~ time, ~ qty_14N, ~ qty_15N,
+      "UL",  "transect.1",  "NH4",     11,         0,  -0.00569,
+      "UL",  "transect.2",  "NH4",     11,         0,  -0.00264,
+      "UL",  "transect.3",  "NH4",     11,         0, -0.000726,
+      "UL",  "transect.1",  "NO3",     11,         0,  -0.00851,
+      "UL",  "transect.2",  "NO3",     11,         0,  -0.01118,
+      "UL",  "transect.3",  "NO3",     11,         0,  -0.01244,
+  )
+m <- m %>% add_pulse_event(pulses = pulses, comp = "comp", time = "time",
+                           unmarked = "qty_14N", marked = "qty_15N")
+m <- m %>% set_size_family("normal_sd", by_compartment = TRUE)
+m <- set_prior(m, constant_p(0.1), "zeta_NH4") %>%  # Dummy values for the steady
+  set_prior(constant_p(0.1), "zeta_NO3") %>%        # state dissolved nutrients
+  set_prior(constant_p(115), "zeta_epi") %>%
+  set_prior(constant_p(2436), "zeta_FBOM") %>%
+  set_prior(constant_p(10.7), "zeta_pseph") %>%
+  set_prior(constant_p(2.88), "zeta_arg") %>%
+  set_prior(constant_p(13.3), "zeta_tricor") %>%
+  set_prior(constant_p(2.48), "zeta_petro")
+m <- set_priors(m, normal_p(0, 0.5), "upsilon|lambda")
+m <- m %>%
+  set_prior(normal_p(0, 1000), "upsilon_N") %>%
+  set_prior(constant_p(0), "lambda_N")
+m <- set_priors(m, normal_p(0, 3), "^eta")
+m <- set_priors(m, uniform_p(0, 1), "portion")
+
+r <- run_mcmc(m, iter = 100, seed = 42, chains = 2, cores = 2)
+
+```
+
+## Performing K-fold cross-validation
+
+Not as efficient as PSIS-LOO because it needs refit, but it can help when PSIS-LOO diagnostics are bad.
+
+Give an example.
+
+
+
+
+
+<nav aria-label="Page navigation">
+ <ul class="pagination justify-content-end">
+  <li class="page-item"><a class="page-link" href="tutorial-110-derived-parameters.html">Previous: Calculating derived parameters</a></li>
+  <li class="page-item"><a class="page-link" href="tutorial-120-howto-simulations.html">Next: How to simulate experiments</a></li>
+ </ul>
+</nav>

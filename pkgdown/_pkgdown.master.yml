@@ -1,0 +1,253 @@
+### * Resources
+
+# https://stackoverflow.com/questions/45886789/include-all-other-functions-in-a-pkgdown-reference-yaml
+
+### * url
+
+url: https://matthieu-bruneaux.gitlab.io/isotracer/dev/
+
+### * home
+
+home:
+  links:
+    - text: Browse source code at
+      href: https://gitlab.com/matthieu-bruneaux/isotracer/
+
+### * template and toc
+      
+template:
+  params:
+    bootswatch: flatly
+
+toc:
+  depth: 3
+
+### * navbar
+
+navbar:
+
+### ** Left
+  
+  left:
+    - icon: fa-home fa-lg
+      href: index.html
+
+### *** Tutorials
+      
+    - text: Tutorials
+      menu:
+        - text: "--------------"
+        - text: "Start here!"
+        - text: "--------------"
+        - text: "Quick start"
+          href: articles/tutorial-010-quick-start.html
+        - text: "--------------"
+        - text: "Specifying the experimental design"
+        - text: "--------------"
+        - text: "Handling replication"
+          href: articles/tutorial-020-replication.html
+        - text: "Setting steady-state compartments"
+          href: articles/tutorial-030-steady-state-comps.html
+        - text: "Adding pulse/drip events"
+          href: articles/tutorial-040-pulse-drip-events.html
+        - text: "--------------"
+        - text: "Defining the statistical model"
+        - text: "--------------"
+        - text: "Fixed effects of covariates"
+          href: articles/tutorial-050-fixed-effects.html
+        - text: "Units and priors"
+          href: articles/tutorial-060-units-priors.html
+        - text: "--------------"
+        - text: "After a model run"
+        - text: "--------------"
+        - text: "MCMC output format"
+          href: articles/tutorial-080-mcmc-output-format.html
+        - text: "Post-run diagnostics and analyses"
+          href: articles/tutorial-090-post-run-analyses.html
+        - text: "Posterior predictive checks"
+          href: articles/tutorial-100-posterior-predictive-checks.html
+        - text: "Calculating derived parameters"
+          href: articles/tutorial-110-derived-parameters.html
+        - text: "--------------"
+        - text: "Running simulations before an experiment"
+        - text: "--------------"
+        - text: "How to simulate experiments"
+          href: articles/tutorial-120-howto-simulations.html
+        - text: "Testing parameter identifiability"
+          href: articles/tutorial-130-parameter-identifiability.html
+
+### *** Case studies
+          
+    - text: Case studies
+      menu:
+        - text: "(1) Li et al. 2017 - Protein turnover in Arabidopsis"
+          href: articles/case-study-li-2017.html
+        - text: "(2) McRoy & Barsdate 1970 - Phosphate uptake by eelgrass"
+          href: articles/case-study-mcroy-1970.html
+        - text: "(3) Collins et al. 2016 - Nitrogen in Trinidadian streams"
+          href: articles/case-study-collins-2016.html
+
+### *** Reference
+          
+    - text: "Reference"
+      href: reference/index.html
+
+### ** Right
+          
+  right:
+
+### *** News and GitLab repo
+          
+    - text: News
+      href: news/index.html
+    - icon: fa-gitlab fa-lg
+      href: https://gitlab.com/matthieu-bruneaux/isotracer
+
+### * reference
+
+reference:
+
+### ** Building and running a network model
+  
+  - title: "Building and running a network model"
+    desc: >-
+      These functions allow to define the characteristics of a network
+      (topology, initial conditions, ...) and the statistical properties of the
+      corresponding model (priors, covariates, ...).
+  - subtitle: "Definition of network properties"
+  - contents:
+      - new_networkModel
+      - set_topo
+      - set_init
+      - set_obs
+      - set_steady
+      - set_split
+      - set_half_life
+      - add_pulse_event
+  - subtitle: "Definition of statistical properties"
+  - contents:
+      - add_covariates
+      - set_size_family
+      - set_prop_family
+      - set_prior
+      - set_priors
+      - missing_priors
+  - subtitle: "Available priors"
+  - contents:
+      - available_priors
+      - constant_p
+      - uniform_p
+      - normal_p
+      - hcauchy_p
+      - scaled_beta_p
+      - exponential_p
+      - gamma_p
+  - subtitle: "Examining a network model"
+  - contents:
+      - comps
+      - groups.networkModel
+      - params
+      - priors
+      - prop_family
+      - size_family
+      - topo
+      - ggtopo
+  - subtitle: "Running a network model"
+  - contents:
+      - run_mcmc
+
+### ** Post-run functions
+      
+  - title: "Post-run functions"
+    desc: >-
+      These functions allow basic manipulation of the mcmc.list object returned
+      when running a model. Posterior predictive checks can be performed, and
+      network properties such as steady states can be calculated.
+  - subtitle: "Visualization and manipulation of MCMC samples"
+  - contents:
+      - plot.networkModel
+      - tidy_mcmc
+      - Math.mcmc.list
+      - Ops.mcmc.list
+      - c.mcmc.list
+      - "[.networkModelStanfit"
+      - mcmc_heatmap
+  - subtitle: "Posterior predictive checks"
+  - contents:
+      - predict.networkModel
+      - tidy_dpp
+  - subtitle: "Network properties"
+  - contents:
+      - tidy_trajectories
+      - tidy_steady_states
+      - tidy_flows
+  - subtitle: "Visualization of network fluxes"
+  - contents:
+      - sankey
+      - quick_sankey
+      - ggflows
+
+### ** Simulation toolkit
+
+  - title: "Simulation toolkit"
+    desc: >-
+      The package provides functions that can be used to simulate data for a
+      given network topology and some parameter values.
+  - contents:
+      - sample_from_prior
+      - sample_params
+      - set_params
+      - sample_from
+      
+### ** Datasets
+      
+  - title: "Datasets"
+    desc: >-
+      Datasets shipped with the package (example models, example run, and
+      datasets used in the case studies).
+  - subtitle: "Example models and run"
+  - contents:
+      - aquarium_mod
+      - aquarium_run
+      - trini_mod
+  - subtitle: "Datasets used in the case studies"
+  - contents:
+      - eelgrass
+      - lalaja
+      - li2017_counts
+      - li2017_prots
+      - li2017
+
+### ** Miscellaneous
+
+  - title: "Miscellaneous"
+    desc: >-
+      Those are mostly methods implemented in the package. Typically the
+      package user will not need to call those functions themselves.
+  - subtitle: "Prior-related"
+  - contents:
+      - Ops.prior
+      - format.prior
+      - format.prior_tibble
+      - obj_sum.prior
+      - pillar_shaft.prior
+      - print.prior
+      - print.prior_tibble
+      - type_sum.prior
+  - subtitle: "Topology-related"
+  - contents:
+      - Ops.topology
+      - as_tbl_graph.topology
+      - ggtopo.networkModel
+      - ggtopo.topology
+      - print.topology
+  - subtitle: "Others"
+  - contents:
+      - as.mcmc.list.tidy_flows
+      - as.mcmc.list.tidy_steady_states
+      - filter.ppcNetworkModel
+      - isotracer-package
+      - plot.ready_for_unit_plot
+      - posterior_predict.networkModelStanfit
+      - print.networkModel
+      - select.mcmc.list

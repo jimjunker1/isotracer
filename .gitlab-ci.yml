@@ -1,0 +1,92 @@
+### * TODO
+
+# Include mechanism to update master and dev pages independently:  
+# https://stackoverflow.com/questions/55596789/deploying-gitlab-pages-for-different-branches/58915486#58915486
+
+# Fix R CMD check when running on Gitlab CI: as of 2021-10-22, R CMD check
+# hangs when rebuilding the package (while it works fine locally).
+
+### * stages
+
+stages:
+  - build
+  - deploy
+
+### * cache
+
+cache:
+  paths:
+    - public/
+  
+### * before_script
+
+# The default before_script installs all the dependencies.
+
+default:
+  before_script:
+    # Install checkbashsims for R CMD check
+    - apt-get update && apt-get -y install devscripts libtbb-dev ccache
+    - mkdir -p ~/.ccache
+    - echo "hash_dir = false" > ~/.ccache/ccache.conf
+    # Write ~/.R/Makevars
+    - mkdir -p ~/.R
+    - echo "CXX14 = ccache g++" > ~/.R/Makevars
+    - echo "CXX11FLAGS = -O3 -w" >> ~/.R/Makevars
+    - echo "CXX14FLAGS = -O3 -w" >> ~/.R/Makevars
+    - echo "CXX17FLAGS = -O3 -w" >> ~/.R/Makevars
+    # Install package dependencies
+    - R -e 'install.packages(c("here", "coda", "latex2exp", "txtplot", "sankey"), quiet = TRUE)'
+    - R -e 'install.packages(c("MASS", "microbenchmark", "bayesplot", "gridExtra", "crayon"), quiet = TRUE)'
+    - R -e 'install.packages(c("viridis", "ggmcmc", "rstan", "rstantools", "R6", "ggraph"), quiet = TRUE)'
+    - R -e 'install.packages(c("magick", "viridis", "gapminder", "pkgdown", "DT", "cpp11"), quiet = TRUE)'
+    - R -e 'install.packages(c("ggraph", "gridBase", "ggdist", "covr"))'
+  
+### * [build] buildPackageMaster (only: master)
+
+buildPackageMaster:
+  image: rocker/verse
+  stage: build
+  script:
+    # Install package
+    - make clean-docs clean-man clean-pkgdown-yml clean-compiled clean-data
+    - make install
+    # Test package
+    - make test
+    # Test coverage
+    - make coverage
+    - mkdir -p coverageResults
+    - cp -r docs/coverage/* coverageResults
+    # R CMD check
+    - make check
+    - mkdir -p check
+    - cp R-CMD-check_output.txt R-CMD-check_badge.svg check/
+    # Build pkgdown website
+    - rm -fr docs/
+    - make pkgdown
+    # Copy coverage results
+    - mkdir -p docs/coverage/
+    - cp -r coverageResults/* docs/coverage/
+    # Copy R CMD check results
+    - cp check/* docs/
+    # Update cache
+    - rm -fr public/
+    - mv docs/ public/
+  artifacts:
+    paths:
+      - public/
+  only:
+    - master
+
+### * [deploy] pages
+      
+pages:
+  stage: deploy
+  before_script:
+    - ''
+  script:
+    - ls
+  artifacts:
+    paths:
+      - public
+  only:
+    - master

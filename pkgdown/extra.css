@@ -1,0 +1,65 @@
+.nav-stacked {
+    margin-left: 7px;
+}
+
+pre {
+    background-color: #fbfbfb;
+    color: darkgreen;
+}
+
+pre.sourceCode {
+    background-color: #f8f8f8;
+    color: black;
+    border: 2px solid #eee;
+}
+
+.alert-secondary {
+    border: 1px sandybrown solid;
+    border-left: 15px sandybrown solid;
+    padding: 10px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    margin-left: 5%;
+    margin-right: 5%;
+    border-radius: 5px;
+}
+
+.alert-primary {
+    border: 1px #39c18c solid;
+    border-left: 15px #39c18c solid;
+    padding: 10px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    margin-left: 5%;
+    margin-right: 5%;
+    border-radius: 5px;
+}
+
+.pagination {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    margin-top: 30px;
+}
+
+ul.nav ul li.active a {
+    color: #48a5ad;
+    background-color: white;
+    border: none;
+}
+
+ul.nav ul li a {
+    background-color: white;
+    border: none;
+}
+
+.dropdown-header {
+    background-color: #2c3e50;
+    padding-left: 10px;
+    color: white;
+}
+
+.dropdown-menu .divider {
+    margin-top: 2px;
+    margin-bottom: 2px;
+}

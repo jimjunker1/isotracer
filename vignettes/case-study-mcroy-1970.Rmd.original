@@ -1,0 +1,319 @@
+---
+title: "Case study: phosphorus uptake in eelgrass (McRoy and Barsdate 1970)"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{Case study: phosphorus uptake in eelgrass (McRoy and Barsdate 1970)}
+output:
+  rmarkdown::html_vignette
+---
+
+```{r, include = FALSE}
+knitr::opts_knit$set(verbose = TRUE)
+knitr::opts_chunk$set(fig.align = "center", fig.cap = "",
+                      fig.path = "figures/z-fig-cs-mcroy-1970-",
+                      dev = "jpeg")
+options(scipen = 6, width = 85)
+
+library(isotracer)
+
+library(magrittr)
+set.seed(4)
+
+n_cores <- min(2, parallel::detectCores())
+n_chains <- max(n_cores, 4)
+
+run_mcmc <- function(...) {
+  isotracer:::run_mcmc(..., cores = n_cores, chains = n_chains,
+                       seed = 43)
+}
+
+set_priors <- function(...) {
+  isotracer:::set_priors(..., quiet = TRUE)
+}
+```
+
+This case study models phosphorus uptake at the organism level in eelgrass from a dataset adapted from the following article:
+
+- McRoy, C. Peter, and Robert J. Barsdate. “Phosphate Absorption in Eelgrass1.” Limnology and Oceanography 15, no. 1 (January 1, 1970): 6–13. https://doi.org/10.4319/lo.1970.15.1.0006.
+
+## Biological question and experimental setup
+
+Eelgrass can be present in dense populations in shallow water areas, and can have an important role in nutrients cycles in the ecosystems it is present in.
+
+The McRoy 1970 study examines the uptake of phosphorus by eelgrass plants from the surrounding water or sediment and its transfer in the plant tissues. What is the preferred uptake pathway for phosphorus (leaves or roots)? How fast is it exchanged across plant tissues? Do the uptake processes depend on light conditions?
+
+The experimental setup consists in individual eelgrass plants kept in closed jars, with a watertight septum separating the upper and the lower compartments. The upper compartment contains the leaves and stems of the plant, while the lower compartment contais the roots and rhizome. 32P is added as phosphate to either the upper or lower water compartment, and jars are kept in either light or dark conditions. At several time points over the course of two days, individual plants are taken from the experiment and 32P abundance in the water and in the plant tissues is quantified by measuring radioactive decay (cpm/mg of dry material).
+
+## Modelling
+
+### Data preparation
+
+```{r eval = FALSE}
+library(tidyverse)
+library(isotracer)
+```
+```{r include = FALSE}
+library(isotracer)
+# Import individual tidyverse packages to avoid having tidyverse in DESCRIPTION
+library(dplyr)
+library(tibble)
+library(ggplot2)
+```
+
+The data is available in `eelgrass`:
+
+```{r }
+eelgrass
+```
+
+In this experiment, we only have observations for the total amount of 32P per compartment (we do not measure the amount of 31P). The `isotracer` model will be provided with proportions of 1 for all measurements, and we will not estimate $\eta$ in the model:
+
+```{r }
+eelgrass <- eelgrass %>% mutate(prop = 1)
+```
+
+We modify the data so that the time is given in days (this will make specifying the half-life of 32P more straightforward since it is usually given in days). We also modify the units for the abundance of 32P: instead of atom counts we will use $10^6$ atoms to make things more readable:
+
+```{r }
+eelgrass <- eelgrass %>%
+  mutate(time_day = time_min / (24 * 60),
+         n_1e6_32P = n_32P / 1e6)
+```
+
+We keep only the columns we will need for the modelling:
+
+```{r }
+eelgrass <- eelgrass %>%
+  select(compartment, time_day, n_1e6_32P, prop, light_treatment, addition_site)
+```
+
+This is our table ready for the model specification:
+
+```{r }
+eelgrass
+```
+
+### Model fitting
+
+There are two treatments with two levels each (light/dark and 32P added in upper/lower water compartment) and the treatments are crossed.
+
+We will assume that the rates defining the phosphorus flows do not depend on the compartment where 32P is added, but that the light conditions can have an effect on the rates. In other words: light condition is a covariate for the rates, while addition compartment is simply a replication unit.
+
+Let's consider the following network topology:
+
+```{r message = FALSE}
+m <- new_networkModel() %>%
+  set_topo("upper_water -> leaves_stem -> roots_rhizome",
+           "lower_water -> roots_rhizome -> leaves_stem")
+ggtopo(m)
+```
+
+Note that to make the model more amenable, we have neglected the release of phosphorus by the plant into the water (but this is actually an important biological process!).
+
+(When including release from the plant, the model estimates some very high exchange rates!)
+
+32P is a radioactive compound and undergoes decay, which has to be taken into account in the model given the experiment time scale. The half-life of 32P is about 14 days:
+
+```{r message = FALSE}
+m <- m %>% set_half_life(14.268)
+```
+
+Let's separate the initial conditions from the later observations:
+
+```{r }
+init <- filter(eelgrass, time_day < 0.01)
+obs <- filter(eelgrass, time_day > 0.01)
+```
+
+We add those initial conditions and the observations to the model. Note that we specify that the experimental data is grouped by treatment (light condition and location of tracer addition):
+
+```{r message = FALSE}
+m <- m %>%
+  set_init(init, comp = "compartment", size = "n_1e6_32P", prop = "prop",
+           group_by = c("light_treatment", "addition_site")) %>%
+  set_obs(obs, time = "time_day")
+```
+
+The default parameters of the model are:
+
+```{r }
+params(m)
+```
+
+Before setting priors, we specify that we want to use the light condition as a covariate for the uptake rates:
+
+```{r message = FALSE}
+m <- m %>% add_covariates(upsilon ~ light_treatment)
+```
+
+The parameters to fit are now:
+
+```{r }
+params(m)
+```
+
+We can start specifying the priors. We assume that no 32P exits the system (except what is lost through radioactive decay), so we set all `lambda` parameters to constant 0:
+
+```{r message = FALSE}
+m <- m %>% set_priors(constant_p(0), "lambda")
+```
+
+Since $\eta$ has no role in this model (only "marked" tracer is observed), we just set it to a constant dummy value:
+
+```{r message = FALSE}
+m <- m %>% set_priors(constant_p(1), "^eta")
+```
+
+To avoid the model exploring very large and unlikely values for the `upsilon` rates and for the `zeta` coefficient of variation of observed pool sizes, we give them a slightly informative prior that has most of its probability mass below 2 with `normal_p(0, 2)`:
+
+```{r message = FALSE}
+m <- m %>%
+  set_priors(normal_p(0, 2), "upsilon") %>%
+  set_priors(normal_p(0, 2), "zeta")
+```
+
+We are now ready to fit the model:
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+cache_file <- file.path("z-cache-case-study-mcroy-1970-run.rds")
+if (!file.exists(cache_file)) {
+  fit <- run_mcmc(m, iter = 2000)
+  saveRDS(fit, file = cache_file)
+} else {
+  fit <- readRDS(cache_file)
+}
+```
+
+```{r eval = FALSE}
+fit <- run_mcmc(m)
+```
+
+How do the chains look like?
+
+```{r fig.width = 8, fig.height = 6}
+plot(fit)
+```
+
+The chains look fine. How can we interpret our parameter estimates now?
+
+## Interpretation
+
+The most striking result is that the estimated $\zeta$ value is extremely large: around 3! $\zeta$ is the estimated coefficient of variation for the pool size, so this means that the standard deviation of the observed sizes is about 3 times the mean expected size for any given time point! This is extremely large, but it is consistent with the data, which does contain ups and downs:
+
+```{r fig.width = 8, fig.height = 6}
+ggplot(eelgrass, aes(x = time_day, y = n_1e6_32P)) +
+  geom_line(aes(col = compartment)) +
+  facet_wrap(~ light_treatment + addition_site) +
+  coord_trans(y = "log10")
+```
+
+In the original article, authors explain this variability by the fact than distinct individual plants are sampled at each time point (to double-check). This is compounded by approximations we made when processing the data from the original paper:
+
+- We pooled the 32P cpm/mg data from several tissues together and use their average value to reconciliate the pooling of the biomass data (given for e.g. "leaves and stem" together in the original paper) and the 32P data (given separately for leaf tip, middle and base and stem in the original paper)
+
+- The reported data for each time point was in cpm/mg dry weight, and we use a single mean value of each tissue total dry weight per treatment to convert those values into 32P/compartment for the purpose of this case study.
+
+Such a large $\zeta$ value is likely to impact the quality of the posterior predictions:
+
+```{r echo = FALSE, fig.width = 12, fig.height = 8}
+cache_file <- file.path("z-cache-case-study-mcroy-1970-pred.rds")
+if (!file.exists(cache_file)) {
+  pred <- m %>% predict(fit, probs = 0.95, draws = 200, cores = n_cores)
+  saveRDS(pred, file = cache_file)
+} else {
+  pred <- readRDS(cache_file)
+}
+plot(pred, facet_row = "group", facet_column = "compartment", log = TRUE, type = "size")
+```
+
+```{r eval = FALSE}
+pred <- predict(m, fit, probs = 0.95, draws = 200)
+plot(pred, facet_row = "group", facet_column = "compartment", log = TRUE, type = "size")
+```
+
+As seen above, the predicted intervals for the trajectories of the pool sizes are extremely wide (note that the y scale is logarithmic). Hopefully, a dataset where total tissue dry weight is estimated at the same time as cpm/mg dry weight would allow to reduce a lot the uncertainty in those predicted trajectories.
+
+Can we still say something about the parameter posteriors? Let's try. What are again the parameters we estimated?
+
+```{r }
+varnames(fit)
+```
+
+One interesting question is whether the roots incorporate phosphate with the same efficiency as the leaves. Let's build a derived parameter calculating the ratio between the two `upsilon` rates in light condition:
+
+```{r }
+z <- (fit[, "upsilon_lower_water_to_roots_rhizome|light"] /
+      fit[, "upsilon_upper_water_to_leaves_stem|light"])
+summary(z)$quantiles
+```
+
+The uncertainty is too large to say anything in this case, even though it looks like the `upsilon` rate might be smaller for the roots than for the leaves. Can we ask another question?
+
+What about the difference between light and dark conditions? For example, what is the effect of light on the 32P uptake by the leaves:
+
+```{r }
+z <- (fit[, "upsilon_upper_water_to_leaves_stem|light"] /
+      fit[, "upsilon_upper_water_to_leaves_stem|dark"])
+summary(z)$quantiles
+```
+
+In this case, even with the large uncertainty in our estimates, we can reliably say that the leaves incorporates 32P faster in light condition (mean estimate: about 5x faster).
+
+Does light have an effect on the 32P uptake by the roots?
+
+```{r }
+z <- (fit[, "upsilon_lower_water_to_roots_rhizome|light"] /
+      fit[, "upsilon_lower_water_to_roots_rhizome|dark"])
+summary(z)$quantiles
+```
+
+Here again, the uncertainty is massive, but overall it looks like 32P uptake at the roots is probably faster under light conditions.
+
+### Sankey plot
+
+We can build a Sankey plot representation of the 32P flows in this experiment, while keeping in mind that the uncertainties were very large and that the Sankey plot will only present average flow values.
+
+To estimate flows for a situation where there is as much 32P in the water column and in the sediment, we will create some new initial conditions where there is as much 32P in the upper and lower water compartments (and the leaves and roots do not have any 32P) (to double-check: does this reflect a biological reality in the field?):
+
+```{r }
+init2 <- tibble(compartment = c("lower_water", "upper_water", "roots_rhizome",
+                                "leaves_stem"),
+                n_1e6_32P = c(1e5, 1e5, 0, 0),
+                prop = 1)
+# Create a `m2` model with the adjusted initial conditions
+m2 <- m %>%
+  set_init(init2, comp = "compartment", size = "n_1e6_32P", prop = "prop")
+```
+
+Now we can estimate the flows given those initial conditions and the parameter posteriors:
+
+```{r eval = FALSE}
+flows <- tidy_flows(m2, fit, n = 200)
+flows
+```
+
+```{r echo = FALSE}
+cache_file <- file.path("z-cache-case-study-mcroy-1970-flows.rds")
+if (!file.exists(cache_file)) {
+  flows <- tidy_flows(m2, fit, n = 200, cores = n_cores)
+  saveRDS(flows, file = cache_file)
+} else {
+  flows <- readRDS(cache_file)
+}
+flows
+```
+
+This flow table contains estimates for all the treatment groups. As a reminder, the treatments were:
+
+```{r }
+groups(m2)
+```
+
+Let's draw a Sankey plot showing the flows estimated for the light treatment. With the `quick_sankey()` function, average flow estimates over the whole posterior are shown. We will use flows estimated from the additions in the upper and lower water compartments (so the estimates should be proportional to overall flows in a situation where phosphate is present in the sediment and in the water column):
+
+```{r fig.width = 6, fig.height = 5}
+flows_light <- flows %>% filter_by_group(light_treatment == "light") 
+quick_sankey(flows_light, node_s = "roundsquare", edge_f = 0.25)
+```

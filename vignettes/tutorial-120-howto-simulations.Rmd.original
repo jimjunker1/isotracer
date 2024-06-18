@@ -1,0 +1,329 @@
+---
+title: "How to simulate experiments"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{How to simulate experiments}
+output:
+  rmarkdown::html_vignette
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(fig.align = "center", fig.cap = "", 
+                      fig.path = "figures/z-fig-120-",
+                      dev = "jpeg")
+options(scipen = 6, width = 85)
+library(isotracer)
+set.seed(4)
+n_cores <- min(2, parallel::detectCores())
+n_chains <- max(n_cores, 2)
+
+library(here)
+
+run_mcmc <- function(...) {
+  isotracer:::run_mcmc(..., cores = n_cores, chains = n_chains,
+                       seed = 18)
+}
+```
+
+Simulating data is a good way to test an experimental design prior to running a costly experiment. The **isotracer** package provides some basic functionality to simulate data for a network model in which the true parameter values are given by the user.
+
+In this vignette, you will learn:
+
+- how to create a network model and set the "true" values for its parameters
+- how to generate simulated data from this network
+- how to use the simulated data to fit a model and try to capture the original parameter values.
+
+By repeating those basic steps, one can test different assumptions on the real system under study and different experimental designs to decide on the most cost-effective approach for the real experiment to be run.
+
+```{r eval = FALSE}
+library(isotracer)
+library(tidyverse)
+```
+```{r include = FALSE}
+library(isotracer)
+# Import individual tidyverse packages to avoid having tidyverse in DESCRIPTION
+library(tibble)
+library(ggplot2)
+```
+
+## Creating a network model
+
+In this vignette, we will use the same example as in the [Including Fixed Effects of Covariates](tutorial-050-fixed-effects.html) tutorial. The modelled foodweb has three compartments:
+
+- dissolved ammonium NH$_4^+$ (`NH4`), which is enriched in $^{15}$N at the
+  beginning of the experiment
+- planctonic algae which incorporate NH$_4^+$ (`algae`)
+- *Daphnia* which graze on algae and excrete ammonium into the water.
+
+The experiment is done in two aquariums, with one aquarium exposed to light while the other is kept in the dark.
+
+### Building the network model
+
+The first step is to build the network model structure. This is done in exactly the same way as in the previous vignettes: we have to specify the network topology, some initial values, and potentially some covariates.
+
+Let's start with the topology:
+
+```{r }
+mod <- new_networkModel() %>%
+    set_topo("NH4 -> algae -> daphnia -> NH4")
+```
+
+We prepare a table of initial values which could be used in the real-life experiment we want to prepare:
+
+```{r }
+inits <- tibble::tribble(
+     ~comps, ~sizes, ~props, ~treatment,
+      "NH4",    0.2,    0.8,    "light",
+    "algae",      1,  0.004,    "light",
+  "daphnia",      2,  0.004,    "light",
+      "NH4",    0.5,    0.8,     "dark",
+    "algae",    1.2,  0.004,     "dark",
+  "daphnia",    1.3,  0.004,     "dark")
+```
+
+We had the initial values to the model, and we indicate that we want to group initial values by `"treatment"`:
+
+```{r }
+mod <- set_init(mod, inits, comp = "comps", size = "sizes",
+                prop = "props", group_by = "treatment")
+mod
+```
+
+### Setting parameter values
+
+We have the basic model ready to be given some "true" parameter values. What are the parameters we have to specify?
+
+```{r }
+params(mod)
+```
+
+Let's say that we want to simulate an effect of `"treatment"` (light/dark) on the uptake of NH4 by the algae:
+
+```{r }
+mod <- add_covariates(mod, upsilon_NH4_to_algae ~ treatment)
+```
+
+Now we have more parameters to specify:
+
+```{r }
+params(mod)
+```
+
+We can set the parameter values with the `set_params()` function:
+
+```{r }
+mod <- mod %>%
+  set_params(c("eta" = 0.2, "lambda_algae" = 0, "lambda_daphnia" = 0,
+               "lambda_NH4" = 0, "upsilon_NH4_to_algae|light" = 0.3,
+               "upsilon_NH4_to_algae|dark" = 0.1,
+               "upsilon_algae_to_daphnia" = 0.13,
+               "upsilon_daphnia_to_NH4" = 0.045, "zeta" = 0.1))
+```
+
+Once the parameter values are stored in the network model, they are visible in the `parameters` column:
+
+```{r }
+mod$parameters
+```
+
+The model is now complete and can be used to generate data!
+
+## Generating simulated data
+
+One can calculate predicted trajectories with the `project()` function:
+
+```{r fig.width = 9, fig.height = 6}
+proj <- mod %>% project(end = 10)
+plot(proj, facet_row = "type", facet_col = "group")
+```
+
+Real-life data will incorporate some variability around those trajectories. To simulate data with variability around expected compartment size (coefficient of variation `"zeta"`) and around expected proportion of tracer (c.v. `"eta"`), one can use the `sample_from()` function:
+
+```{r }
+spl <- mod %>% sample_from(at = 1:10)
+spl
+```
+
+To visualize the simulated data, we can add it to the projected trajectories:
+
+```{r fig.width = 9, fig.height = 6}
+proj <- proj %>%
+  set_obs(spl, comp = "comp", size = "size", prop = "prop", time = "time",
+          group = "treatment")
+plot(proj, facet_row = "type", facet_col = "group")
+```
+
+## Fitting a model on the simulated data
+
+We can use the simulated data in `spl` to fit parameters using MCMC. By using different versions of the dataset, we can compare different experimental designs. Here, to **test how sample size affects the uncertainty of parameter estimates**, we will perform MCMC runs with either the full `spl` dataset (ten time points) or a reduced dataset with only three time points:
+
+```{r }
+spl_reduced <- spl %>% filter(time %in% c(4, 7, 10))
+```
+
+```{r echo = FALSE, fig.width = 9, fig.height = 6}
+proj_red <- proj %>%
+  set_obs(spl_reduced, comp = "comp", size = "size", prop = "prop", time = "time",
+          group = "treatment")
+plot(proj_red, facet_row = "type", facet_col = "group")
+```
+
+### Run with ten time points
+
+We add the simulated data to the model as we would do for real data:
+
+```{r }
+mod_full <- mod %>%
+  set_obs(spl, comp = "comp", size = "size", prop = "prop", time = "time",
+          group = "treatment")
+```
+
+We have to define the priors for our model:
+```{r }
+mod_full <- mod_full %>%
+  set_priors(normal_p(0, 5), "lambda|upsilon") %>%
+  set_priors(normal_p(0, 2), "eta")
+```
+
+We run the MCMC:
+
+```{r eval = FALSE}
+run_full <- run_mcmc(mod_full, iter = 2000)
+plot(run_full)
+# Note: the figure below only shows a few of the traceplots for vignette concision
+```
+
+```{r echo = FALSE, message = FALSE, warning = FALSE, results = "hide", fig.width = 4, fig.height = 2}
+cache_file <- file.path("z-cache-tutorial-120-run.rds")
+if (!file.exists(cache_file)) {
+  run_full <- run_mcmc(mod_full, iter = 2000)
+  saveRDS(run_full, file = cache_file)
+} else {
+  run_full <- readRDS(cache_file)
+}
+plot(run_full[, 1:2])
+```
+
+and we do a posterior predictive check:
+
+```{r eval = FALSE}
+pred_full <- predict(mod_full, run_full)
+plot(pred_full, facet_row = c("group", "type"),
+     facet_col = "compartment",
+     scale = "all")
+```
+
+```{r echo = FALSE, fig.width = 8, fig.height = 9}
+cache_file <- file.path("z-cache-tutorial-120-pred.rds")
+if (!file.exists(cache_file)) {
+  pred_full <- predict(mod_full, run_full)
+  saveRDS(pred_full, file = cache_file)
+} else {
+  pred_full <- readRDS(cache_file)
+}
+plot(pred_full, facet_row = c("group", "type"),
+     facet_col = "compartment",
+     scale = "all")
+```
+
+### Run with three time points
+
+We use the reduced dataset this time:
+
+```{r }
+mod_red <- mod %>%
+  set_obs(spl_reduced, comp = "comp", size = "size", prop = "prop",
+          time = "time", group = "treatment")
+```
+
+We set the priors:
+
+```{r }
+mod_red <- mod_red %>%
+  set_priors(normal_p(0, 5), "lambda|upsilon") %>%
+  set_priors(normal_p(0, 2), "eta")
+```
+
+We run the MCMC:
+
+```{r eval = FALSE}
+run_red <- run_mcmc(mod_red, iter = 2000)
+plot(run_red)
+# Note: the figure below only shows a few of the traceplots for vignette concision
+```
+
+```{r echo = FALSE, message = FALSE, warning = FALSE, results = "hide", fig.width = 4, fig.height = 2}
+cache_file <- file.path("z-cache-tutorial-120-run2.rds")
+if (!file.exists(cache_file)) {
+  run_red <- run_mcmc(mod_red, iter = 2000)
+  saveRDS(run_red, file = cache_file)
+} else {
+  run_red <- readRDS(cache_file)
+}
+plot(run_red[, 1:2])
+```
+
+and we do a posterior predictive check:
+
+```{r eval = FALSE}
+pred_red <- predict(mod_red, run_red)
+plot(pred_red, facet_row = c("group", "type"),
+     facet_col = "compartment",
+     scale = "all")
+```
+
+```{r echo = FALSE, fig.width = 8, fig.height = 9}
+cache_file <- file.path("z-cache-tutorial-120-pred2.rds")
+if (!file.exists(cache_file)) {
+  pred_red <- predict(mod_red, run_red)
+  saveRDS(pred_red, file = cache_file)
+} else {
+  pred_red <- readRDS(cache_file)
+}
+plot(pred_red, facet_row = c("group", "type"),
+     facet_col = "compartment",
+     scale = "all")
+```
+
+### Comparison
+
+Does using ten time points (`spl`) instead of three (`spl_reduced`) improve a lot the parameter estimates? Let's compare the uncertainty in their posteriors:
+
+```{r }
+signif(summary(run_full)$quantiles, 2)
+signif(summary(run_red)$quantiles, 2)
+```
+
+```{r message = FALSE}
+library(bayesplot)
+library(cowplot)
+plot_grid(nrow = 2, 
+  mcmc_intervals(run_full %>% select("lambda")) + xlim(0, 0.025) +
+    ggtitle("10 time points"),
+  mcmc_intervals(run_red %>% select("lambda")) + xlim(0, 0.025) +
+    ggtitle("3 time points")
+  )
+plot_grid(nrow = 2, 
+  mcmc_intervals(run_full %>% select("upsilon")) + xlim(0, 0.35) +
+    ggtitle("10 time points"),
+  mcmc_intervals(run_red %>% select("upsilon")) + xlim(0, 0.35) + 
+    ggtitle("3 time points")
+)
+```
+
+The experiment with three time points seems quite good at estimating parameters despite the low number of observations, but the uncertainties are definitely reduced when 10 time points are used.
+
+## To go further
+
+This example only used one simulated dataset. When preparing a real-life experiment, it would make sense to try a range of "true" values for the parameters to be estimated and different initial conditions in addition to different experimental designs (number of replicates, number of samples, timing of sampling).
+
+A convenient way to structure many data simulations is to create a tibble containing the simulation variables (e.g. parameter values, sampling points, alternative models) and store the resulting simulated datasets and their corresponding MCMC fits in list columns to make the analysis of the simulations easier.
+
+<nav aria-label="Page navigation">
+ <ul class="pagination justify-content-end">
+  <li class="page-item"><a class="page-link" href="tutorial-110-derived-parameters.html">Previous: Calculating derived parameters</a></li>
+  <li class="page-item"><a class="page-link" href="tutorial-130-parameter-identifiability.html">Next: Testing parameter identifiability</a></li>
+ </ul>
+</nav>

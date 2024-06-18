@@ -1,0 +1,302 @@
+---
+title: "Post-run diagnostics and analyses"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{Post-run diagnostics and analyses}
+output:
+  rmarkdown::html_vignette
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(fig.align = "center", fig.cap = "",
+                      fig.path = "figures/z-fig-090-",
+                      dev = "jpeg")
+options(scipen = 6, width = 85)
+library(isotracer)
+set.seed(4)
+n_cores <- min(2, parallel::detectCores())
+
+library(here)
+
+run_mcmc <- function(...) {
+  isotracer:::run_mcmc(..., cores = n_cores)
+}
+```
+
+In this tutorial, we assume that you successfully ran an MCMC on a network
+model, and that it is now time to have a critical look at the output of the
+run.
+
+This tutorial will present how to check that the MCMC run went fine, but it will explain only very briefly how to check that the model is compatible with the observed data. More details about this important step is presented in the next vignette about [posterior predictive checks](tutorial-100-posterior-predictive-checks.html).
+
+This vignette is using the MCMC run from the [Quick start
+tutorial](tutorial-010-quick-start.html). Please go back and run the code of
+that vignette to generate the MCMC data if you haven't already!
+
+```{r eval = FALSE}
+# Load the tidyverse package for easier data manipulation
+library(tidyverse)
+```
+
+```{r include = FALSE}
+library(isotracer)
+library(dplyr)
+library(purrr)
+load("z-cache-tutorial-010-quick-start.RData")
+```
+
+### Reminder: what is the result format returned by `run_mcmc()`?
+
+<div class="alert-primary" role="alert"> 
+
+<b>Note:</b> This short section is a quick reminder of what you learnt in the previous tutorial [MCMC output format](tutorial-080-mcmc-output-format.html)).
+
+</div>
+
+In the **Quick Start** tutorial, we generated the `run` object by running `run <- run_mcmc(m, iter = 1000)`. The output from `run_mcmc()` is a well-behaved
+`mcmc.list` object as implemented in the `coda` package:
+
+```{r }
+is(run, "mcmc.list")
+```
+
+It makes it very easy to use the tools already available for this class of
+objects, such as those implemented in the packages `coda`, `bayesplot`,
+`ggmcmc` or `MCMCvis`.
+
+In addition to all those existing tools, the `isotracer` package also adds some
+extra methods to easily calculate derived parameters from an `mcmc.list`. You
+will learn more about how to do this in the vignette [Derived
+parameters](tutorial-110-derived-parameters.html).
+
+<div class="alert-primary" role="alert"> 
+
+<b>Tip:</b> `isotracer` uses Stan behind the scenes to run the MCMC. If you prefer to get the raw `stanfit` object instead of the processed `mcmc.list`, you can set `stanfit = TRUE` when you run the model:
+
+```{r eval = FALSE}
+run <- run_mcmc(model = m, stanfit = TRUE)
+```
+
+This might be especially useful if the MCMC sampling is difficult for your
+model and you need the `stanfit` object to perform some in-depth diagnostics.
+
+</div>
+
+## General diagnostics
+
+### Trace plot
+
+You should always run **several chains** when performing a Bayesian MCMC. Trace
+plots allow to get a feeling for:
+
+- Chain convergence: did all chains reach the same region of the parameter
+  space?
+- Mixing: is the mixing of good quality or should we modify the sampler
+  settings?
+
+If you are not satisfied with the traces, you need to run a longer run or maybe
+to tweak the settings of the Stan run.
+
+This is the trace plot we obtained from the previous vignette:
+
+```{r eval = FALSE}
+plot(run)
+# Note: the figure below only shows a few of the traceplots for vignette concision
+```
+
+```{r echo = FALSE, fig.width = 4, fig.height = 2}
+plot(run[, 1:2])
+```
+
+In this case, the chains have converged towards the same region, and the mixing
+looks good for all of them. There is no obvious problem visible in those traces.
+
+### Gelman and Rubin's convergence diagnostic
+
+It can be useful to have a more formal test of the convergence of the
+chains. The Gelman and Rubin's convergence diagnostic is implemented in the
+`coda` package. We can run it with the `coda::gelman.diag()` function. See the
+coda documentation `?gelman.diag` for more details about this diagnostic.
+
+Let's have a look at the diagnostic for our chains:
+
+```{r message = FALSE}
+library(coda)
+run %>% gelman.diag()
+```
+
+The diagnostic values should be very, very close to 1: it looks good in this
+case!
+
+If some values were e.g. $>1.05$, this would already be enough to cause us to
+wonder about the sampling quality.
+
+### Predicted trajectories
+
+In order to check the quality of the model fit, the consistency between the parameter posteriors and the observed data can be checked by plotting the credible envelopes for the estimated trajectories along with the observed data points. This is called a posterior predictive check and is very important to check that the model can actually predict the observed data reasonably well. If the observed data cannot be satisfactorily predicted from the fitted model, then our model is not a good model of the data!
+
+To do a posterior predictive check, the first step is to generate predictions for the model based on the MCMC posteriors with `predict()`:
+
+```{r eval = FALSE}
+# From the Quick Start tutorial:
+# 'm' is the network model we used when calling 'run <- run_mcmc(m, iter = 1000)'
+predictions <- predict(m, run, probs = 0.95)
+```
+
+```{r echo = FALSE}
+cache_file <- file.path("z-cache-tutorial-010-pred.rds")
+if (!file.exists(cache_file)) {
+  predictions <- m %>% predict(run, probs = 0.95)
+  saveRDS(predictions, file = cache_file)
+} else {
+  predictions <- readRDS(cache_file)
+}
+```
+
+We can then visualize the predictions along with the observations with the `plot()` method:
+
+```{r fig.width = 9, fig.height = 4}
+plot(predictions)
+```
+
+This plot enables to compare both the **size** and the **proportion** observations with the predictions.
+
+## Post-run analyses
+
+### Parameter estimates
+
+The quickest way to get parameter estimates is to use the `summary()` function
+on the posterior:
+
+```{r }
+run %>% summary()
+```
+
+If you need to store those values, for example to plot them, you can assign the
+output of `summary()` to an object:
+
+```{r }
+estimates <- run %>% summary()
+names(estimates)
+```
+
+The means and standard deviations are accessible in `$statistics`:
+
+```{r }
+estimates$statistics
+```
+
+and the quantiles are in `$quantiles`:
+
+```{r }
+estimates$quantiles
+```
+
+### Parameter correlations
+
+The dependencies between your model parameters might be of interest to you. If
+you would like to analyse the correlations between parameters during the MCMC
+run, you can use a few ready-made functions to get a quick overview of the
+correlation structure.
+
+The `isotracer` package comes with the minimalist function `mcmc_heatmap()` to
+draw the strength of parameter correlations:
+
+```{r }
+mcmc_heatmap(run)
+```
+
+But of course you could use other functions provided by other packages, such as:
+
+- `ggmcmc` package
+    + `ggs_crosscorrelation()`
+    + `ggs_pairs()`
+- `bayesplot` package
+    + `mcmc_pairs()`
+
+### Extracting parameters, trajectories and flows
+
+If you are interested in getting detailed tables containing all the samples of the parameter posteriors, you can use the `tidy_mcmc()` function:
+
+```{r }
+tidy_mcmc(run)
+```
+
+By default the parameter values are nested into a list column, but you can also get a flat table with `spread = TRUE`:
+
+```{r }
+tidy_mcmc(run, spread = TRUE)
+```
+
+The above table only contains the primary parameters. If you are interested in getting the predicted trajectories for individual MCMC samples, you can use the `tidy_trajectories()` function:
+
+```{r eval = FALSE}
+# We have to also provide the original network model `m`
+tt <- tidy_trajectories(m, run, n = 200)
+tt
+```
+
+```{r echo = FALSE}
+# We have to also provide the original network model `m`
+tt <- tidy_trajectories(m, run, n = 200, cores = n_cores)
+tt
+```
+
+As you can see, the `tt` object is a tidy table which contains the parameter values and the corresponding trajectories calculated for 200 randomly selected MCMC samples. The calculated trajectories are stored in the `trajectories` column and provide the quantities of unmarked and marked tracer (e.g. light and heavy isotope) for each compartment at each time step:
+
+```{r }
+tt$trajectories[[1]]
+```
+
+Because each trajectory is itself a table containing a time series for each compartment, the output of `tidy_trajectories()` has several levels of nesting. This makes it a bit cumbersome to manipulate. Note that the output format of this function might change in the future.
+
+Here is an example of what can be done using the predicted trajectories:
+
+```{r fig.width = 7, fig.height = 5}
+algae <- tt %>%
+  mutate(prop_algae = map(trajectories, function(tr) {
+    tr[["proportions"]][[1]][, "algae"]
+  })) %>%
+  pull(prop_algae) %>%
+  do.call(rbind, .)
+time <- tt$trajectories[[1]]$timepoints[[1]]
+plot(0, type = "n", xlim = range(time), ylim = range(algae), las = 1,
+     xlab = "Time", ylab = "Proportion of marked tracer (algae)",
+     main = "Posterior sample of trajectories (for 15N prop. in algae)")
+invisible(sapply(seq_len(nrow(algae)), function(i) {
+  lines(time, algae[i,], col = adjustcolor("seagreen3", alpha.f = 0.2))
+}))
+```
+
+Finally, if what you are interested in are not the trajectories per se but the actual flows of nutrient during the experiment, you can use the `tidy_flows()` function to extract flows in a similar way:
+
+```{r eval = FALSE}
+#' Again, note that we also provide the original network model `m`
+tf <- tidy_flows(m, run, n = 200)
+tf
+```
+
+```{r echo = FALSE}
+#' Again, note that we also provide the original network model `m`
+tf <- tidy_flows(m, run, n = 200, cores = n_cores)
+tf
+```
+
+The returned object is very similar to the output of `tidy_trajectories()`, except that the `trajectories` column is replaced by a `flows` column:
+
+```{r }
+tf$flows[[1]]
+```
+
+The average flow values are given in flow per unit of time. See `?tidy_flows()` for more details, including the possibility of calculating steady state flows for network systems that admits a steady state equilibrium.
+
+The `tidy_trajectories()` and `tidy_flows()` functions are especially useful when you want to do some calculations related to some specific properties of the trajectories or of the nutrient flows over the whole MCMC posterior.
+
+<nav aria-label="Page navigation">
+ <ul class="pagination justify-content-end">
+  <li class="page-item"><a class="page-link" href="tutorial-080-mcmc-output-format.html">Previous: MCMC output format</a></li>
+  <li class="page-item"><a class="page-link" href="tutorial-100-posterior-predictive-checks.html">Next: Posterior predictive checks</a></li>
+ </ul>
+</nav>

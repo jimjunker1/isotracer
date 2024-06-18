@@ -1,0 +1,183 @@
+---
+title: "MCMC output format"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{MCMC output format}
+output:
+  rmarkdown::html_vignette
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(fig.align = "center", fig.cap = "",
+                      fig.path = "figures/z-fig-080-",
+                      dev = "jpeg")
+options(scipen = 6, width = 85)
+library(isotracer)
+set.seed(4)
+n_cores <- min(2, parallel::detectCores())
+n_chains <- 4
+
+library(here)
+
+run_mcmc <- function(...) {
+  isotracer:::run_mcmc(..., cores = n_cores, chains = n_chains,
+                       seed = 43)
+}
+```
+
+In this tutorial, we will have a closer look at the object returned by calling `run_mcmc()` on a network model. Understanding the structure of the object containing the results of a run is important for model diagnostics and interpretation.
+
+## The default format: mcmc.list
+
+To quickly obtain an MCMC run output for us to examine, let's run the simple model `aquarium_mod` which is provided with the package. Feel free to read the help `?aquarium_mod` if you are curious about the model itself.
+
+```{r eval = FALSE}
+library(isotracer)
+aquarium_mod
+fit <- run_mcmc(aquarium_mod, iter = 1000)
+```
+
+```{r echo = FALSE, message = FALSE, warning = FALSE, results = "hide"}
+library(isotracer)
+aquarium_mod
+cache_file <- file.path("z-cache-tutorial-080-run.rds")
+if (!file.exists(cache_file)) {
+  fit <- run_mcmc(aquarium_mod, iter = 1000)
+  saveRDS(fit, file = cache_file)
+} else {
+  fit <- readRDS(cache_file)
+}
+```
+
+By default, `run_mcmc()` returns an `mcmc.list` object. An `mcmc.list` has a simple format to store the content of parallel MCMC chains:
+
+```{r }
+length(fit)
+str(fit[[1]])
+```
+
+The output above can seem a little obscure if you are not familiar with R data structures, but in a nutshell it tells us that the `mcmc.list` is basically a list with one element per chain, each chain being stored as a matrix.
+
+The `mcmc.list` class is implemented by the [coda](https://cran.r-project.org/package=coda) package, and it has the advantage of being recognized by many other R packages dealing with Bayesian MCMC such as **bayesplot** of **ggmcmc**.
+
+In the **isotracer** package, the returned `fit` is very slightly extended compared to the base `mcmc.list` class:
+
+```{r }
+class(fit)
+```
+
+By having also a `networkModelStanfit` class, the output from `run_mcmc()` can be recognized automatically by some methods implemented in **isotracer**, such as `plot()`:
+
+```{r eval = FALSE}
+plot(fit)
+# Note: the figure below only shows a few of the traceplots for vignette concision
+```
+
+```{r echo = FALSE, fig.width = 4, fig.height = 2}
+plot(fit[, 1:2])
+```
+
+### How to convert the default output to a table?
+
+An `mcmc.list` object can be converted to an even simpler, flat matrix:
+
+```{r }
+z <- as.matrix(fit)
+head(z)
+str(z)
+```
+
+or to a data frame:
+
+```{r }
+z <- as.data.frame(as.matrix(fit))
+head(z)
+str(z)
+```
+
+or to a tibble:
+
+```{r }
+z <- tibble::as_tibble(as.matrix(fit))
+z
+```
+
+### How to calculate derived parameters?
+
+Converting your output to one of those simple tabular formats can be useful if you want to manipulate and perform operations on your MCMC samples.
+
+However, for simple manipulations, `isotracer` provides convenient methods to perform calculations on parameter chains directly from the output of `run_mcmc()`. You can thus produce derived parameter chains directly from the `mcmc.list` object, without having to convert your output to another format:
+
+```{r fig.width = 2, fig.height = 2}
+algal_total_out <- fit[, "upsilon_algae_to_daphnia"] + fit[, "lambda_algae"]
+algal_turnover <- 1 / algal_total_out
+plot(algal_turnover)
+```
+
+You can read more about this in the vignette about [calculating derived parameters](tutorial-110-derived-parameters.html).
+
+### How to combine derived parameters?
+
+You can combine derived parameters into a single `mcmc.list`object using the usual `c()` syntax. This can be convenient for more compact plotting or summary calculations:
+
+```{r fig.width = 4, fig.height = 2}
+my_derived <- c("out rate" = algal_total_out, "turnover" = algal_turnover)
+plot(my_derived)
+summary(my_derived)
+```
+
+## A more detailed format: stanfit
+
+Calling `run_mcmc()` will run a Stan model behind the scenes. Stan is great since it will let you know loudly when something went wrong with the run, such as problems with divergent chains or low Bayesian fraction of missing information. **Such problems should not be ignored!** The Stan development team has a [nice page explaining Stan's warnings](https://mc-stan.org/misc/warnings.html).
+
+In any case, if something went wrong with your run, you might want to have a more complete output than simply the `mcmc.list` object. You can ask `run_mcmc()` to return the original `stanfit` object produced by Stan with:
+
+```{r eval = FALSE}
+fit2 <- run_mcmc(aquarium_mod, iter = 1000, stanfit = TRUE)
+```
+
+```{r echo = FALSE, message = FALSE, warning = FALSE, results = "hide"}
+cache_file <- file.path("z-cache-tutorial-080-run2.rds")
+if (!file.exists(cache_file)) {
+  fit2 <- run_mcmc(aquarium_mod, iter = 1000, stanfit = TRUE)
+  saveRDS(fit2, file = cache_file)
+} else {
+  fit2 <- readRDS(cache_file)
+}
+```
+
+`fit2` is now a regular `stanfit` object:
+
+```{r }
+class(fit2)
+```
+
+This is a more complicated type of object than an `mcmc.list`, but it also contains much more information about the Stan run. It also comes with the benefit of the existing methods for `stanfit` object, for example:
+
+```{r fig.width = 6, fig.height = 5, message = FALSE}
+rstan::plot(fit2)
+```
+
+You can go through [Stan documentation](https://mc-stan.org/rstan/reference/stanfit-class.html) for more details about this format. If you are reading about solving Stan model issues on online forums and the suggested solutions require to examine some Stan output, that's the object you want to look at!
+
+For example, you can examine it with ShinyStan:
+
+```{r eval = FALSE}
+library(shinystan)
+launch_shinystan(fit2)
+```
+
+<div class="alert-primary" role="alert"> 
+
+Note that with the current version of **isotracer** the parameters are indexed but not named in the `stanfit` object. That is something that will probably be improved in the future!
+
+</div>
+
+<nav aria-label="Page navigation">
+ <ul class="pagination justify-content-end">
+  <li class="page-item"><a class="page-link" href="tutorial-060-units-priors.html">Previous: Units and priors</a></li>
+  <li class="page-item"><a class="page-link" href="tutorial-090-post-run-analyses.html">Next: Post-run diagnostics and analyses</a></li>
+ </ul>
+</nav>
